@@ -9,7 +9,7 @@ import math
 import os
 from PIL import Image, ImageDraw, ImageTk
 import tkinter as tk
-from tkinter import messagebox # 팝업 알림창용
+from tkinter import messagebox 
 
 # --- 윈도우 CMD 창 깜빡임 방지 옵션 ---
 CREATE_NO_WINDOW = 0x08000000 if os.name == 'nt' else 0
@@ -36,8 +36,8 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 # UI 기본 설정
 customtkinter.set_appearance_mode("Dark")
 root = customtkinter.CTk()
-root.geometry("1050x700") 
-root.title("iOS GPS Spoofer Pro - Master Edition")
+root.geometry("1050x760") 
+root.title("iOS GPS Spoofer Pro - Route Master Edition")
 
 # --- 🎨 커스텀 마커 이미지 생성 ---
 def make_circle_icon(color, size=24):
@@ -48,6 +48,7 @@ def make_circle_icon(color, size=24):
 
 icon_me = make_circle_icon("#1976D2", 20)     
 icon_target = make_circle_icon("#D32F2F", 20) 
+icon_waypoint = make_circle_icon("#FBC02D", 16) 
 
 # 상태 변수
 current_lat, current_lng = get_real_location()
@@ -56,6 +57,11 @@ is_moving = False
 my_marker = None
 target_marker = None
 
+# 멀티 포인트 상태 변수
+waypoint_list = []
+waypoint_markers = []
+path_line = None
+
 # 기기 연결 상태 추적 변수
 device_connected = None 
 already_warned = False
@@ -63,7 +69,6 @@ already_warned = False
 # ----------------- 🚨 기기 연결 모니터링 로직 -----------------
 
 def show_disconnect_warning():
-    """연결 끊김 팝업창 띄우기 (UI 스레드에서 실행)"""
     messagebox.showwarning(
         "기기 연결 오류", 
         "아이패드(또는 아이폰)와의 연결이 끊어졌거나 인식할 수 없습니다.\n\n"
@@ -73,21 +78,17 @@ def show_disconnect_warning():
     )
 
 def connection_monitor():
-    """실제로 기기에 '말을 걸어' 연결 상태를 확인하는 강화된 모니터링"""
     global device_connected, already_warned, is_moving
     
     while True:
         try:
-            # 단순히 list만 보는 게 아니라, 실제 기기의 식별자(UDID)를 가져오려고 시도
-            # 연결이 끊기면 이 명령어가 즉시 실패하거나 빈 값을 내뱉습니다.
             result = subprocess.run(
                 "pymobiledevice3 usbmux list", 
                 capture_output=True, text=True, 
                 creationflags=CREATE_NO_WINDOW,
-                timeout=2 # 2초 안에 응답 없으면 끊긴 걸로 간주
+                timeout=2 
             )
             
-            # 출력 내용이 [] 이거나 기기 정보가 포함되어 있지 않으면 끊긴 것
             if "Identifier" not in result.stdout:
                 status = False
             else:
@@ -96,7 +97,7 @@ def connection_monitor():
             if status is False:
                 if device_connected is not False:
                     device_connected = False
-                    is_moving = False # 걷기 즉시 중지
+                    is_moving = False 
                     root.after(0, lambda: conn_status_label.configure(text="🔴 기기 연결 끊김", text_color="#E57373"))
                     
                     if not already_warned:
@@ -109,7 +110,6 @@ def connection_monitor():
                     root.after(0, lambda: conn_status_label.configure(text="🟢 기기 정상 연결됨", text_color="#81C784"))
                     
         except (subprocess.TimeoutExpired, Exception):
-            # 타임아웃이 발생했다는 건 응답을 못 할 정도로 끊겼다는 뜻
             if device_connected is not False:
                 device_connected = False
                 is_moving = False
@@ -118,15 +118,14 @@ def connection_monitor():
                     already_warned = True
                     root.after(0, show_disconnect_warning)
             
-        time.sleep(2) # 체크 주기를 2초로 단축
+        time.sleep(2) 
         
-# 모니터링 스레드 시작
 threading.Thread(target=connection_monitor, daemon=True).start()
 
 # ----------------- 코어 로직 -----------------
 
 def run_command_sync(lat, lng):
-    if not device_connected: return # 연결 안 되어 있으면 전송 안 함
+    if not device_connected: return 
     
     command = f"pymobiledevice3 developer dvt simulate-location set {lat} {lng}"
     try:
@@ -149,6 +148,19 @@ def update_current_location(lat, lng, move_map=False):
     status_label.configure(text=f"현재 위치:\n{lat:.5f}, {lng:.5f}")
     threading.Thread(target=run_command_sync, args=(lat, lng), daemon=True).start()
 
+def update_path():
+    global path_line
+    if path_line:
+        path_line.delete()
+        path_line = None
+        
+    all_points = [(current_lat, current_lng)] + waypoint_list
+    if target_coords:
+        all_points.append(target_coords)
+        
+    if len(all_points) > 1:
+        path_line = map_widget.set_path(all_points, color="#64B5F6", width=3)
+
 def map_left_click(coords):
     global target_coords, target_marker
     target_coords = coords
@@ -160,6 +172,21 @@ def map_left_click(coords):
         target_marker.set_position(lat, lng)
         
     target_label.configure(text=f"목적지:\n{lat:.5f}, {lng:.5f}")
+    update_path() 
+
+def map_middle_click(event):
+    canvas_x = map_widget.canvas.canvasx(event.x)
+    canvas_y = map_widget.canvas.canvasy(event.y)
+    lat, lng = map_widget.convert_canvas_coords_to_decimal_coords(canvas_x, canvas_y)
+    
+    if len(waypoint_list) >= 15:
+        print("⚠️ 경유지는 최대 15개까지만 설정 가능합니다.")
+        return
+
+    waypoint_list.append((lat, lng))
+    marker = map_widget.set_marker(lat, lng, icon=icon_waypoint)
+    waypoint_markers.append(marker)
+    update_path() 
 
 # ----------------- 좌표 입력 이동 -----------------
 
@@ -178,7 +205,7 @@ def btn_go_to_coords():
     except ValueError:
         print("❌ 잘못된 좌표 형식입니다. '위도, 경도' (예: 37.50, 126.87) 형식으로 입력하세요.")
 
-# ----------------- 이동 로직 -----------------
+# ----------------- 이동 및 초기화 로직 -----------------
 
 def btn_teleport():
     if not target_coords: return
@@ -186,7 +213,8 @@ def btn_teleport():
 
 def btn_walk():
     global is_moving
-    if not target_coords or is_moving: return
+    if not target_coords and not waypoint_list: return
+    if is_moving: return
     
     if not device_connected:
         show_disconnect_warning()
@@ -199,31 +227,70 @@ def btn_walk():
     
     def walk_task():
         global is_moving
-        start_lat, start_lng = current_lat, current_lng
-        end_lat, end_lng = target_coords
-        dist_km = haversine_distance(start_lat, start_lng, end_lat, end_lng)
         
-        if dist_km == 0:
-            is_moving = False
-            return
+        path_to_walk = waypoint_list.copy()
+        if target_coords:
+            path_to_walk.append(target_coords)
             
-        total_seconds = (dist_km / speed_kmh) * 3600
-        tick_rate = 1.0 
-        steps = max(int(total_seconds / tick_rate), 1)
+        completed_successfully = True # ⭐ 완주 여부 체크 플래그
         
-        for i in range(1, steps + 1):
-            if not is_moving or not device_connected: break
-            t = i / steps
-            update_current_location(start_lat + (end_lat - start_lat) * t, 
-                                    start_lng + (end_lng - start_lng) * t)
-            time.sleep(tick_rate) 
+        for point in path_to_walk:
+            if not is_moving or not device_connected: 
+                completed_successfully = False
+                break
+            
+            start_lat, start_lng = current_lat, current_lng
+            end_lat, end_lng = point
+            dist_km = haversine_distance(start_lat, start_lng, end_lat, end_lng)
+            
+            if dist_km == 0: continue
+                
+            total_seconds = (dist_km / speed_kmh) * 3600
+            tick_rate = 1.0 
+            steps = max(int(total_seconds / tick_rate), 1)
+            
+            for i in range(1, steps + 1):
+                if not is_moving or not device_connected: 
+                    completed_successfully = False
+                    break
+                t = i / steps
+                update_current_location(start_lat + (end_lat - start_lat) * t, 
+                                        start_lng + (end_lng - start_lng) * t)
+                time.sleep(tick_rate) 
+                
         is_moving = False
+        
+        # ⭐ 정지당하지 않고 무사히 완주했다면 자동으로 경유지 싹 지우기
+        if completed_successfully:
+            print("🏁 목적지 도착 완료! (경유지를 자동 삭제합니다)")
+            # UI 조작(마커 삭제)이 포함되므로 안전하게 메인 스레드(root.after)에서 실행
+            root.after(0, btn_clear_waypoints)
 
     threading.Thread(target=walk_task, daemon=True).start()
 
-def btn_clear():
-    global is_moving
+def btn_clear_waypoints():
+    global waypoint_list, waypoint_markers
+    for m in waypoint_markers: m.delete()
+    waypoint_markers.clear()
+    waypoint_list.clear()
+    update_path() 
+    print("🗑️ 경유지가 모두 삭제되었습니다.")
+
+def btn_clear_all():
+    global is_moving, target_coords, target_marker, path_line
     is_moving = False
+    
+    if target_marker:
+        target_marker.delete()
+        target_marker = None
+    target_coords = None
+    
+    for m in waypoint_markers: m.delete()
+    waypoint_markers.clear()
+    waypoint_list.clear()
+    if path_line:
+        path_line.delete()
+        path_line = None
     
     def task():
         if device_connected:
@@ -231,6 +298,7 @@ def btn_clear():
             
     threading.Thread(target=task, daemon=True).start()
     status_label.configure(text="현재 위치:\n실제 위치로 복구됨")
+    target_label.configure(text="목적지:\n지도 클릭 또는 직접 입력")
 
 # ----------------- UI 레이아웃 -----------------
 
@@ -243,7 +311,9 @@ map_frame = customtkinter.CTkFrame(root)
 map_frame.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
 map_widget = tkintermapview.TkinterMapView(map_frame, corner_radius=10)
 map_widget.pack(fill="both", expand=True)
+
 map_widget.add_left_click_map_command(map_left_click)
+map_widget.canvas.bind("<Button-2>", map_middle_click) 
 
 # 커스텀 우클릭 메뉴
 def custom_right_click(event):
@@ -272,7 +342,6 @@ control_frame.grid_propagate(False)
 
 customtkinter.CTkLabel(control_frame, text="GPS 제어 패널", font=("Arial", 18, "bold")).pack(pady=(15, 5))
 
-# ⭐ 연결 상태 표시 라벨 (패널 맨 위)
 conn_status_label = customtkinter.CTkLabel(control_frame, text="⏳ 연결 상태 확인 중...", text_color="#FFB74D", font=("Arial", 12, "bold"))
 conn_status_label.pack(pady=(0, 10))
 
@@ -282,9 +351,11 @@ status_label.pack(pady=5)
 target_label = customtkinter.CTkLabel(control_frame, text="목적지:\n지도 클릭 또는 직접 입력", text_color="#E57373")
 target_label.pack(pady=5)
 
+customtkinter.CTkLabel(control_frame, text="💡 휠 클릭: 경유지 추가", text_color="gray", font=("Arial", 11)).pack()
+
 # --- ⌨️ 좌표 입력 섹션 ---
 input_frame = customtkinter.CTkFrame(control_frame, fg_color="transparent")
-input_frame.pack(pady=10, padx=10, fill="x")
+input_frame.pack(pady=5, padx=10, fill="x")
 
 entry_coords = customtkinter.CTkEntry(input_frame, placeholder_text="위도, 경도 (예: 37.50, 126.87)", height=30)
 entry_coords.pack(pady=5, fill="x")
@@ -293,7 +364,7 @@ go_btn = customtkinter.CTkButton(input_frame, text="좌표로 이동", command=b
 go_btn.pack(pady=5, fill="x")
 
 # --- ⚡ 속도 및 조작 섹션 ---
-customtkinter.CTkLabel(control_frame, text="이동 속도:").pack(pady=(15, 0))
+customtkinter.CTkLabel(control_frame, text="이동 속도:").pack(pady=(10, 0))
 speed_val_label = customtkinter.CTkLabel(control_frame, text="15.0 km/h", text_color="#81C784", font=("Arial", 12, "bold"))
 speed_val_label.pack()
 
@@ -313,8 +384,11 @@ walk_btn.pack(pady=5, padx=10, fill="x")
 stop_btn = customtkinter.CTkButton(control_frame, text="🛑 정지", command=lambda: globals().update(is_moving=False), fg_color="#F57C00")
 stop_btn.pack(pady=5, padx=10, fill="x")
 
-clear_btn = customtkinter.CTkButton(control_frame, text="🔄 원래 위치 복구", command=btn_clear, fg_color="#C62828")
-clear_btn.pack(pady=(20, 10), padx=10, fill="x")
+clear_wp_btn = customtkinter.CTkButton(control_frame, text="🗑️ 경유지 모두 지우기", command=btn_clear_waypoints, fg_color="#5D4037", hover_color="#4E342E")
+clear_wp_btn.pack(pady=5, padx=10, fill="x")
+
+clear_btn = customtkinter.CTkButton(control_frame, text="🔄 원래 위치 복구", command=btn_clear_all, fg_color="#C62828")
+clear_btn.pack(pady=(15, 10), padx=10, fill="x")
 
 map_widget.set_position(current_lat, current_lng)
 map_widget.set_zoom(15)

@@ -16,13 +16,17 @@ from tkinter import messagebox
 
 # ==========================================
 # 🚀 내장 CLI 라우터 (exe 파일 내에서 pymobiledevice3 명령어 실행)
-# 콘솔 창을 살렸으므로, 이제 아무런 땜질 없이 순정으로 실행됩니다!
 # ==========================================
 if len(sys.argv) > 1 and sys.argv[1] == "internal_pm3":
     sys.argv = ["pymobiledevice3"] + sys.argv[2:]
-    from pymobiledevice3.__main__ import main as pm3_main
-    try: pm3_main()
-    except SystemExit: pass
+    try:
+        from pymobiledevice3.__main__ import main as pm3_main
+        pm3_main()
+    except Exception:
+        # ⭐ [핵심 수정] 타임아웃 등 자잘한 통신 에러가 나도 콘솔에 토해내지 않고 조용히 죽도록 예외 처리
+        pass 
+    except SystemExit:
+        pass
     sys.exit(0)
 
 def get_pm3_cmd(args_str):
@@ -95,8 +99,8 @@ def connection_monitor():
 def run_command_sync(lat, lng):
     if not device_connected: return 
     cmd = get_pm3_cmd(f"developer dvt simulate-location set {lat} {lng}")
-    # 창 숨김 옵션을 모두 뺐습니다. 이제 메인 콘솔 창에 로그가 자연스럽게 찍힙니다!
-    subprocess.run(cmd, shell=True, check=False)
+    # ⭐ [핵심 수정] 1초마다 쏘는 이 명령어는 콘솔 창을 더럽히지 않도록 완전히 묵음(DEVNULL) 처리합니다.
+    subprocess.run(cmd, shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def update_current_location(lat, lng, move_map=False):
     global current_lat, current_lng, my_marker
@@ -201,7 +205,7 @@ if __name__ == '__main__':
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         sys.exit(0)
         
-    print("🚀 백그라운드 터널링 시작 중...")
+    print("🚀 백그라운드 터널링(tunneld) 시작 중...")
     tunnel_process = subprocess.Popen(get_pm3_cmd("remote tunneld"), shell=True)
 
     customtkinter.set_appearance_mode("Dark")

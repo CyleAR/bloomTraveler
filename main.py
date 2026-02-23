@@ -15,18 +15,15 @@ import tkinter as tk
 from tkinter import messagebox 
 
 # ==========================================
-# 🚀 내장 CLI 라우터 (exe 파일 내에서 pymobiledevice3 명령어 실행)
+# 🚀 내장 CLI 라우터
 # ==========================================
 if len(sys.argv) > 1 and sys.argv[1] == "internal_pm3":
     sys.argv = ["pymobiledevice3"] + sys.argv[2:]
     try:
         from pymobiledevice3.__main__ import main as pm3_main
         pm3_main()
-    except Exception:
-        # ⭐ [핵심 수정] 타임아웃 등 자잘한 통신 에러가 나도 콘솔에 토해내지 않고 조용히 죽도록 예외 처리
-        pass 
-    except SystemExit:
-        pass
+    except Exception: pass 
+    except SystemExit: pass
     sys.exit(0)
 
 def get_pm3_cmd(args_str):
@@ -66,17 +63,74 @@ def make_circle_icon(color, size=24):
     return ImageTk.PhotoImage(img)
 
 # ==========================================
-# 🧠 코어 동작 함수들 
+# 🧠 상태 변수 및 스마트 동기화 엔진
+# ==========================================
+sync_lock = threading.Lock() 
+sync_trigger = threading.Event() 
+
+# ⭐ 하트비트(고무줄 방지) 상태 변수 추가
+use_heartbeat = False 
+
+def toggle_heartbeat():
+    global use_heartbeat
+    use_heartbeat = (heartbeat_var.get() == "on")
+    print(f"💓 하트비트 모드: {'켜짐' if use_heartbeat else '꺼짐'}")
+
+def location_sync_loop():
+    global device_connected, use_heartbeat
+    last_sent_coords = (None, None)
+    
+    while True:
+        sync_trigger.wait(timeout=0.5)
+        sync_trigger.clear()
+        
+        if not device_connected: continue
+        
+        curr = (current_lat, current_lng)
+        
+        # ⭐ 하트비트가 켜져 있거나(무조건 전송) OR 위치가 변경되었을 때만 전송
+        if use_heartbeat or (curr != last_sent_coords):
+            if sync_lock.acquire(blocking=False):
+                try:
+                    cmd = get_pm3_cmd(f"developer dvt simulate-location set {curr[0]} {curr[1]}")
+                    subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    last_sent_coords = curr
+                finally:
+                    sync_lock.release()
+
+def update_current_location(lat, lng, move_map=False, force_sync=False):
+    global current_lat, current_lng, my_marker
+    current_lat, current_lng = lat, lng
+    
+    if my_marker is None: my_marker = map_widget.set_marker(lat, lng, icon=icon_me)
+    else: my_marker.set_position(lat, lng)
+    
+    if move_map: map_widget.set_position(lat, lng)
+    status_label.configure(text=f"현재 위치:\n{lat:.5f}, {lng:.5f}")
+    
+    if force_sync:
+        sync_trigger.set()
+
+# ==========================================
+# 🛡️ 기기 모니터링
 # ==========================================
 def show_disconnect_warning():
     messagebox.showwarning("기기 연결 오류", "아이패드(또는 아이폰)와의 연결이 끊어졌거나 인식할 수 없습니다.\n케이블 및 '신뢰함' 여부를 확인하세요.")
 
 def connection_monitor():
-    global device_connected, already_warned, is_moving
+    global device_connected, already_warned, is_moving, tunnel_process
     while True:
+        time.sleep(4) 
+        if tunnel_process and tunnel_process.poll() is not None:
+            print("⚠️ 터널링 데몬 재시작 중...")
+            tunnel_process = subprocess.Popen(get_pm3_cmd("remote tunneld"), shell=True)
+            time.sleep(3) 
+            
+        if not sync_lock.acquire(blocking=False): continue 
+            
         try:
             cmd = get_pm3_cmd("usbmux list")
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=2)
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=3)
             status = "Identifier" in result.stdout
             if status is False:
                 if device_connected is not False:
@@ -94,22 +148,8 @@ def connection_monitor():
                 root.after(0, lambda: conn_status_label.configure(text="🔴 기기 연결 끊김", text_color="#E57373"))
                 if not already_warned:
                     already_warned = True; root.after(0, show_disconnect_warning)
-        time.sleep(2) 
-
-def run_command_sync(lat, lng):
-    if not device_connected: return 
-    cmd = get_pm3_cmd(f"developer dvt simulate-location set {lat} {lng}")
-    # ⭐ [핵심 수정] 1초마다 쏘는 이 명령어는 콘솔 창을 더럽히지 않도록 완전히 묵음(DEVNULL) 처리합니다.
-    subprocess.run(cmd, shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def update_current_location(lat, lng, move_map=False):
-    global current_lat, current_lng, my_marker
-    current_lat, current_lng = lat, lng
-    if my_marker is None: my_marker = map_widget.set_marker(lat, lng, icon=icon_me)
-    else: my_marker.set_position(lat, lng)
-    if move_map: map_widget.set_position(lat, lng)
-    status_label.configure(text=f"현재 위치:\n{lat:.5f}, {lng:.5f}")
-    threading.Thread(target=run_command_sync, args=(lat, lng), daemon=True).start()
+        finally:
+            sync_lock.release()
 
 def update_path():
     global path_line
@@ -138,11 +178,68 @@ def btn_go_to_coords():
         parts = [p.strip() for p in entry_coords.get().split(',')]
         if len(parts) != 2: raise ValueError
         lat, lng = float(parts[0]), float(parts[1])
-        map_left_click((lat, lng)); update_current_location(lat, lng, move_map=True) 
+        map_left_click((lat, lng)); update_current_location(lat, lng, move_map=True, force_sync=True) 
     except ValueError: pass
 
+# ==========================================
+# 🎮 조이스틱 (WASD / 방향키) 로직
+# ==========================================
+joystick_keys = {'w': False, 'a': False, 's': False, 'd': False, 'up': False, 'down': False, 'left': False, 'right': False}
+joystick_running = False
+
+def on_key_press(event):
+    if root.focus_get() == entry_coords: return 
+    key = event.keysym.lower()
+    if key in joystick_keys:
+        joystick_keys[key] = True
+        start_joystick_thread()
+
+def on_key_release(event):
+    key = event.keysym.lower()
+    if key in joystick_keys:
+        joystick_keys[key] = False
+
+def joystick_loop():
+    global joystick_running
+    joystick_running = True
+    
+    while any(joystick_keys.values()) and not is_moving:
+        speed_kmh = speed_slider.get()
+        if speed_kmh <= 0:
+            time.sleep(0.1)
+            continue
+            
+        tick_rate = 0.1 
+        dist_km = (speed_kmh / 3600) * tick_rate
+        
+        lat_step = dist_km / 111.0
+        lng_step = dist_km / (111.0 * math.cos(math.radians(current_lat)))
+        
+        d_lat, d_lng = 0, 0
+        if joystick_keys['w'] or joystick_keys['up']: d_lat += lat_step
+        if joystick_keys['s'] or joystick_keys['down']: d_lat -= lat_step
+        if joystick_keys['a'] or joystick_keys['left']: d_lng -= lng_step
+        if joystick_keys['d'] or joystick_keys['right']: d_lng += lng_step
+        
+        if d_lat != 0 or d_lng != 0:
+            root.after(0, update_current_location, current_lat + d_lat, current_lng + d_lng, True, False)
+            
+        time.sleep(tick_rate)
+        
+    joystick_running = False
+
+def start_joystick_thread():
+    global joystick_running
+    if not joystick_running and not is_moving:
+        threading.Thread(target=joystick_loop, daemon=True).start()
+
+# ==========================================
+# 🚶‍♂️ 자동 걷기 및 초기화 로직
+# ==========================================
 def btn_teleport():
-    if target_coords: update_current_location(target_coords[0], target_coords[1])
+    if target_coords: 
+        update_current_location(target_coords[0], target_coords[1], force_sync=True)
+        btn_clear_waypoints() 
 
 def btn_walk():
     global is_moving
@@ -165,14 +262,21 @@ def btn_walk():
             end_lat, end_lng = point
             dist_km = haversine_distance(start_lat, start_lng, end_lat, end_lng)
             if dist_km == 0: continue
-            steps = max(int((dist_km / speed_kmh) * 3600), 1)
+            
+            tick_rate = 0.1 
+            steps = max(int((dist_km / speed_kmh) * 3600 / tick_rate), 1)
+            
             for i in range(1, steps + 1):
                 if not is_moving or not device_connected: completed = False; break
                 t = i / steps
-                update_current_location(start_lat + (end_lat - start_lat) * t, start_lng + (end_lng - start_lng) * t)
-                time.sleep(1.0) 
+                update_current_location(start_lat + (end_lat - start_lat) * t, start_lng + (end_lng - start_lng) * t, move_map=False, force_sync=False)
+                time.sleep(tick_rate) 
+                
         is_moving = False
-        if completed: root.after(0, btn_clear_waypoints)
+        if completed: 
+            root.after(0, btn_clear_waypoints)
+            sync_trigger.set() 
+            
     threading.Thread(target=walk_task, daemon=True).start()
 
 def btn_clear_waypoints():
@@ -201,6 +305,16 @@ def btn_clear_all():
 if __name__ == '__main__':
     multiprocessing.freeze_support()
     
+    if os.name == 'nt':
+        try:
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-10) 
+            mode = ctypes.c_uint32()
+            kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+            kernel32.SetConsoleMode(handle, mode.value & ~0x0040)
+        except Exception:
+            pass
+    
     if not is_admin():
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         sys.exit(0)
@@ -210,7 +324,7 @@ if __name__ == '__main__':
 
     customtkinter.set_appearance_mode("Dark")
     root = customtkinter.CTk()
-    root.geometry("1050x760") 
+    root.geometry("1050x800") # 체크박스 공간을 위해 창 세로 길이를 살짝 늘렸습니다.
     root.title("iOS GPS Spoofer Pro - Master Edition")
 
     icon_me = make_circle_icon("#1976D2", 20)     
@@ -242,10 +356,17 @@ if __name__ == '__main__':
         menu.add_command(label=f"📋 좌표 복사 ({coord_str})", command=copy_silently)
         menu.add_separator()
         menu.add_command(label="📍 여기를 목적지로 핀 꽂기", command=lambda: map_left_click((lat, lng)))
-        menu.add_command(label="🚀 여기로 즉시 순간이동", command=lambda: update_current_location(lat, lng))
+        
+        def pop_teleport():
+            update_current_location(lat, lng, force_sync=True)
+            btn_clear_waypoints()
+        menu.add_command(label="🚀 여기로 즉시 순간이동", command=pop_teleport)
         menu.tk_popup(event.x_root, event.y_root)
 
     map_widget.canvas.bind("<Button-3>", custom_right_click)
+
+    root.bind("<KeyPress>", on_key_press)
+    root.bind("<KeyRelease>", on_key_release)
 
     control_frame = customtkinter.CTkFrame(root, width=260)
     control_frame.grid(row=0, column=1, sticky="ns", padx=(5, 10), pady=10)
@@ -258,7 +379,8 @@ if __name__ == '__main__':
     status_label.pack(pady=5)
     target_label = customtkinter.CTkLabel(control_frame, text="목적지:\n지도 클릭 또는 직접 입력", text_color="#E57373")
     target_label.pack(pady=5)
-    customtkinter.CTkLabel(control_frame, text="💡 휠 클릭: 경유지 추가", text_color="gray", font=("Arial", 11)).pack()
+    
+    customtkinter.CTkLabel(control_frame, text="💡 조작 가이드\n좌클릭: 목적지 | 휠클릭: 경유지\nWASD/방향키: 수동 조작", text_color="gray", font=("Arial", 11)).pack(pady=(0, 5))
 
     input_frame = customtkinter.CTkFrame(control_frame, fg_color="transparent")
     input_frame.pack(pady=5, padx=10, fill="x")
@@ -273,6 +395,20 @@ if __name__ == '__main__':
     speed_slider.set(15.0)
     speed_slider.pack(pady=5, padx=10)
 
+    # ⭐ 고무줄 방지(하트비트) 체크박스 추가
+    heartbeat_var = customtkinter.StringVar(value="off")
+    heartbeat_checkbox = customtkinter.CTkCheckBox(
+        control_frame, 
+        text="💓 고무줄 방지 (강제 하트비트)", 
+        variable=heartbeat_var, 
+        onvalue="on", 
+        offvalue="off",
+        command=toggle_heartbeat,
+        text_color="#F06292",
+        font=("Arial", 12, "bold")
+    )
+    heartbeat_checkbox.pack(pady=(10, 5), padx=10, fill="x")
+
     customtkinter.CTkButton(control_frame, text="🚀 순간이동", command=btn_teleport, fg_color="#1976D2").pack(pady=5, padx=10, fill="x")
     customtkinter.CTkButton(control_frame, text="🚶‍♂️ 걷기 시작", command=btn_walk, fg_color="#388E3C").pack(pady=5, padx=10, fill="x")
     customtkinter.CTkButton(control_frame, text="🛑 정지", command=lambda: globals().update(is_moving=False), fg_color="#F57C00").pack(pady=5, padx=10, fill="x")
@@ -284,9 +420,11 @@ if __name__ == '__main__':
     map_left_click((current_lat, current_lng))
 
     threading.Thread(target=connection_monitor, daemon=True).start()
+    threading.Thread(target=location_sync_loop, daemon=True).start()
 
     try:
         root.mainloop()
     finally:
         print("🛑 프로그램을 종료합니다. 터널을 닫는 중...")
-        tunnel_process.kill()
+        if tunnel_process:
+            tunnel_process.kill()

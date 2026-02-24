@@ -68,13 +68,14 @@ def make_circle_icon(color, size=24):
 sync_lock = threading.Lock() 
 sync_trigger = threading.Event() 
 
-# ⭐ 하트비트(고무줄 방지) 상태 변수 추가
 use_heartbeat = False 
 
 def toggle_heartbeat():
     global use_heartbeat
     use_heartbeat = (heartbeat_var.get() == "on")
-    print(f"💓 하트비트 모드: {'켜짐' if use_heartbeat else '꺼짐'}")
+    print(f"\n================================")
+    print(f"💓 고무줄 방지(하트비트) 모드: {'[켜짐 활성화]' if use_heartbeat else '[꺼짐]'}")
+    print(f"================================\n")
 
 def location_sync_loop():
     global device_connected, use_heartbeat
@@ -88,12 +89,11 @@ def location_sync_loop():
         
         curr = (current_lat, current_lng)
         
-        # ⭐ 하트비트가 켜져 있거나(무조건 전송) OR 위치가 변경되었을 때만 전송
         if use_heartbeat or (curr != last_sent_coords):
             if sync_lock.acquire(blocking=False):
                 try:
                     cmd = get_pm3_cmd(f"developer dvt simulate-location set {curr[0]} {curr[1]}")
-                    subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run(cmd, shell=True) # 200 OK 로그 살려둠
                     last_sent_coords = curr
                 finally:
                     sync_lock.release()
@@ -237,9 +237,22 @@ def start_joystick_thread():
 # 🚶‍♂️ 자동 걷기 및 초기화 로직
 # ==========================================
 def btn_teleport():
-    if target_coords: 
-        update_current_location(target_coords[0], target_coords[1], force_sync=True)
-        btn_clear_waypoints() 
+    if not target_coords: return
+    
+    def teleport_task():
+        lat, lng = target_coords[0], target_coords[1]
+        dist_km = haversine_distance(current_lat, current_lng, lat, lng)
+        
+        if dist_km > 50:
+            print(f"🚀 장거리 점프 감지({dist_km:.0f}km). 기존 GPS 캐시 초기화 중...")
+            subprocess.run(get_pm3_cmd("developer dvt simulate-location clear"), shell=True)
+            time.sleep(1.5) 
+            
+        root.after(0, lambda: update_current_location(lat, lng, force_sync=True))
+        root.after(0, btn_clear_waypoints)
+        print("✨ 텔레포트 완료!")
+
+    threading.Thread(target=teleport_task, daemon=True).start()
 
 def btn_walk():
     global is_moving
@@ -300,6 +313,27 @@ def btn_clear_all():
     target_label.configure(text="목적지:\n지도 클릭 또는 직접 입력")
 
 # ==========================================
+# ☠️ 종료 감지 훅 (동반 자살 스위치)
+# ==========================================
+# 1. 콘솔 창(터미널)을 'X'로 껐을 때 감지하는 핸들러
+HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
+def console_handler(ctrl_type):
+    if ctrl_type in (0, 2, 5, 6): # 터미널 닫힘, Ctrl+C 등 감지
+        if 'tunnel_process' in globals() and tunnel_process:
+            try: tunnel_process.kill()
+            except: pass
+        os._exit(0) # 자비 없이 파이썬을 즉살
+    return False
+global_ctrl_handler = HandlerRoutine(console_handler)
+
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+# ==========================================
 # 🖥️ 메인 실행 블록
 # ==========================================
 if __name__ == '__main__':
@@ -311,7 +345,10 @@ if __name__ == '__main__':
             handle = kernel32.GetStdHandle(-10) 
             mode = ctypes.c_uint32()
             kernel32.GetConsoleMode(handle, ctypes.byref(mode))
-            kernel32.SetConsoleMode(handle, mode.value & ~0x0040)
+            kernel32.SetConsoleMode(handle, mode.value & ~0x0040 | 0x0080)
+            
+            # ⭐ 윈도우 커널에 콘솔 종료 감지 핸들러 부착
+            kernel32.SetConsoleCtrlHandler(global_ctrl_handler, True)
         except Exception:
             pass
     
@@ -324,8 +361,25 @@ if __name__ == '__main__':
 
     customtkinter.set_appearance_mode("Dark")
     root = customtkinter.CTk()
-    root.geometry("1050x800") # 체크박스 공간을 위해 창 세로 길이를 살짝 늘렸습니다.
-    root.title("iOS GPS Spoofer Pro - Master Edition")
+    root.geometry("1050x800")
+    
+    root.title("Bloom Traveler")
+    try:
+        root.iconbitmap(resource_path("app.ico"))
+    except Exception:
+        pass
+
+    # ⭐ 2. GUI 창(지도)을 'X'로 껐을 때 감지하는 핸들러
+    def on_closing():
+        print("🛑 Bloom Traveler를 종료합니다...")
+        if 'tunnel_process' in globals() and tunnel_process:
+            try: tunnel_process.kill()
+            except: pass
+        root.destroy()
+        os._exit(0) # 여기서 콘솔 창과 터널을 통째로 강제 파괴합니다.
+
+    # 윈도우 창 닫기 버튼(X)에 킬 스위치 연결
+    root.protocol("WM_DELETE_WINDOW", on_closing)
 
     icon_me = make_circle_icon("#1976D2", 20)     
     icon_target = make_circle_icon("#D32F2F", 20) 
@@ -395,7 +449,6 @@ if __name__ == '__main__':
     speed_slider.set(15.0)
     speed_slider.pack(pady=5, padx=10)
 
-    # ⭐ 고무줄 방지(하트비트) 체크박스 추가
     heartbeat_var = customtkinter.StringVar(value="off")
     heartbeat_checkbox = customtkinter.CTkCheckBox(
         control_frame, 
@@ -422,9 +475,5 @@ if __name__ == '__main__':
     threading.Thread(target=connection_monitor, daemon=True).start()
     threading.Thread(target=location_sync_loop, daemon=True).start()
 
-    try:
-        root.mainloop()
-    finally:
-        print("🛑 프로그램을 종료합니다. 터널을 닫는 중...")
-        if tunnel_process:
-            tunnel_process.kill()
+    # ⭐ try-finally 블록을 삭제하고, 위에서 만든 on_closing()에 운명을 맡깁니다.
+    root.mainloop()

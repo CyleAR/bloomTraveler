@@ -18,7 +18,7 @@ from tkinter import messagebox
 # ==========================================
 # ⭐ 프로그램 버전 설정 (깃허브 릴리즈 태그와 똑같이 맞춰주세요!)
 # ==========================================
-CURRENT_VERSION = "v1.0.0" 
+CURRENT_VERSION = "v1.0.1" 
 GITHUB_REPO = "CyleAR/bloomTraveler"
 
 # ==========================================

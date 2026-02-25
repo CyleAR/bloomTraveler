@@ -21,7 +21,7 @@
 ## ⚙️ 사전 준비
 
 이 프로그램을 실행하기 위해서는 다음 환경이 필요합니다.
-*   **프로그램 본체**: [여기를 눌러](https://github.com/CyleAR/bloomTraveler/releases) 최신 릴리즈를 다운로드하세요.
+*   **프로그램 본체**: [여기를 눌러](https://github.com/CyleAR/bloomTraveler/releases) 최신 릴리즈(BloomTraveler_버전명.7z 파일)를 다운로드 하세요.
 *   **OS**: Windows 10 또는 11 (관리자 권한 필요)
 *   **개발자 모드(Developer Mode)가 활성화된 iOS / iPadOS  기기**
 *   **Apple 드라이버**: iTunes가 설치되어 있거나, Apple Mobile Device Support 드라이버가 필요합니다. 마이크로소프트 스토어에서 **[Apple 기기 (Apple Devices)]** 앱을 설치하거나 **[iTunes]** 를 설치하세요.

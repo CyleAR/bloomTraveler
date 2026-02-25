@@ -18,7 +18,7 @@ from tkinter import messagebox
 # ==========================================
 # ⭐ 프로그램 버전 설정
 # ==========================================
-CURRENT_VERSION = "v1.0.2" 
+CURRENT_VERSION = "v1.0.3" 
 GITHUB_REPO = "CyleAR/bloomTraveler"
 
 # ==========================================
@@ -117,7 +117,6 @@ def location_sync_loop():
         if use_heartbeat or (curr != last_sent_coords):
             if sync_lock.acquire(blocking=False):
                 try:
-                    # ⭐ [핵심 수정] 마이너스(-) 좌표 에러 방지를 위해 'set' 뒤에 '--' 추가!
                     cmd = get_pm3_cmd(f"developer dvt simulate-location set -- {curr[0]} {curr[1]}")
                     subprocess.run(cmd, shell=True) 
                     last_sent_coords = curr
@@ -138,7 +137,7 @@ def update_current_location(lat, lng, move_map=False, force_sync=False):
         sync_trigger.set()
 
 # ==========================================
-# 🛡️ 기기 모니터링
+# 🛡️ 기기 모니터링 및 개발자 모드 뚫기
 # ==========================================
 def show_disconnect_warning():
     messagebox.showwarning("기기 연결 오류", "아이패드(또는 아이폰)와의 연결이 끊어졌거나 인식할 수 없습니다.\n케이블 및 '신뢰함' 여부를 확인하세요.")
@@ -168,6 +167,13 @@ def connection_monitor():
                 if device_connected is not True:
                     device_connected = True; already_warned = False
                     root.after(0, lambda: conn_status_label.configure(text="🟢 기기 정상 연결됨", text_color="#81C784"))
+                    
+                    # ⭐ [핵심 추가] 기기가 새롭게 연결될 때마다, 숨겨진 개발자 모드 강제 개방 명령을 조용히 쏩니다!
+                    print("✨ 기기 연결 감지: 개발자 모드 자동 활성화 신호 전송 중...")
+                    threading.Thread(
+                        target=lambda: subprocess.run(get_pm3_cmd("amfi enable-developer-mode"), shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL), 
+                        daemon=True
+                    ).start()
         except:
             if device_connected is not False:
                 device_connected = False; is_moving = False

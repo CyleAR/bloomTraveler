@@ -10,15 +10,15 @@ import os
 import sys
 import multiprocessing
 import ctypes
-import webbrowser # ⭐ 브라우저 창을 열기 위해 추가!
+import webbrowser 
 from PIL import Image, ImageDraw, ImageTk
 import tkinter as tk
 from tkinter import messagebox 
 
 # ==========================================
-# ⭐ 프로그램 버전 설정 (깃허브 릴리즈 태그와 똑같이 맞춰주세요!)
+# ⭐ 프로그램 버전 설정
 # ==========================================
-CURRENT_VERSION = "v1.0.1" 
+CURRENT_VERSION = "v1.0.2" 
 GITHUB_REPO = "CyleAR/bloomTraveler"
 
 # ==========================================
@@ -70,7 +70,6 @@ def make_circle_icon(color, size=24):
     return ImageTk.PhotoImage(img)
 
 def check_for_updates():
-    """깃허브 릴리즈를 확인하여 새 버전이 있으면 팝업을 띄웁니다."""
     try:
         url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -78,15 +77,12 @@ def check_for_updates():
             data = json.loads(response.read().decode())
             latest_version = data.get("tag_name", "")
             
-            # 현재 버전과 깃허브의 최신 태그가 다르면 업데이트 알림
             if latest_version and latest_version != CURRENT_VERSION:
                 def show_update_prompt():
                     msg = f"🎉 새로운 버전({latest_version})이 출시되었습니다!\n\n현재 버전: {CURRENT_VERSION}\n\n지금 다운로드 페이지로 이동하시겠습니까?"
                     if messagebox.askyesno("업데이트 알림", msg):
-                        # 사용자가 [예]를 누르면 깃허브 릴리즈 페이지로 이동
                         webbrowser.open(data.get("html_url", f"https://github.com/{GITHUB_REPO}/releases/latest"))
                 
-                # GUI가 완전히 뜬 후 1.5초 뒤에 자연스럽게 팝업 띄우기
                 root.after(1500, show_update_prompt)
     except Exception as e:
         print(f"⚠️ 업데이트 확인 실패 (인터넷 연결 등을 확인하세요): {e}")
@@ -121,7 +117,8 @@ def location_sync_loop():
         if use_heartbeat or (curr != last_sent_coords):
             if sync_lock.acquire(blocking=False):
                 try:
-                    cmd = get_pm3_cmd(f"developer dvt simulate-location set {curr[0]} {curr[1]}")
+                    # ⭐ [핵심 수정] 마이너스(-) 좌표 에러 방지를 위해 'set' 뒤에 '--' 추가!
+                    cmd = get_pm3_cmd(f"developer dvt simulate-location set -- {curr[0]} {curr[1]}")
                     subprocess.run(cmd, shell=True) 
                     last_sent_coords = curr
                 finally:
@@ -396,7 +393,7 @@ if __name__ == '__main__':
     root = customtkinter.CTk()
     root.geometry("1050x800")
     
-    root.title(f"Bloom Traveler {CURRENT_VERSION}") # 상단바에 버전도 같이 표시해줍니다!
+    root.title(f"Bloom Traveler {CURRENT_VERSION}")
     try:
         root.iconbitmap(resource_path("app.ico"))
     except Exception:
@@ -504,7 +501,6 @@ if __name__ == '__main__':
     threading.Thread(target=connection_monitor, daemon=True).start()
     threading.Thread(target=location_sync_loop, daemon=True).start()
     
-    # ⭐ 업데이트 체크 스레드 실행 (프로그램 로딩을 방해하지 않음)
     threading.Thread(target=check_for_updates, daemon=True).start()
 
     root.mainloop()

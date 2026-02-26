@@ -71,7 +71,7 @@ iOS는 GPS뿐만 아니라 주변 Wi-Fi 신호와 기지국을 읽어 위치를 
 
 ## 🤝 Special Thanks
 - reathena
-- noob213
+- oob
 
 ---
 

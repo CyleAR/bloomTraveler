@@ -64,12 +64,14 @@ iOS는 GPS뿐만 아니라 주변 Wi-Fi 신호와 기지국을 읽어 위치를 
 
 ## 📱 작동한 기기 목록
 - 아이폰 15 프로 (iOS 26)
-- 아이패드 에어4 (iPadOS 26)
+- 아이패드 에어4 (iPadOS 26.2)
+- 아이폰 17 (iOS 26.3)
 
 ---
 
 ## 🤝 Special Thanks
 - reathena
+- noob213
 
 ---
 

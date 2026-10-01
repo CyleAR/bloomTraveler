@@ -1,0 +1,5 @@
+pymobiledevice3==11.17.1
+pywebview==6.1
+gpxpy==1.6.2
+geographiclib==2.1
+defusedxml==0.7.1

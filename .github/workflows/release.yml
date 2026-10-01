@@ -1,0 +1,180 @@
+name: Windows Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+    paths:
+      - '**.py'
+      - '**.spec'
+      - 'requirements*.txt'
+      - 'web/**'
+      - 'app.ico'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+
+      - name: Determine release version
+        id: version
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import ast
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+
+          module = ast.parse(Path('main.py').read_text(encoding='utf-8'))
+          version = next(ast.literal_eval(node.value) for node in module.body
+                         if isinstance(node, ast.Assign) and any(
+                             isinstance(target, ast.Name) and target.id == 'VERSION'
+                             for target in node.targets))
+          if not re.fullmatch(r'\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?', version):
+              raise ValueError('VERSION must look like 2.0.6 or 2.0.6-beta.1')
+          tag = 'v' + version
+          if os.environ['GITHUB_REF_TYPE'] == 'tag' and os.environ['GITHUB_REF_NAME'] != tag:
+              raise ValueError('Git tag must match main.py VERSION: ' + tag)
+          request = Request(os.environ['GITHUB_API_URL'] + '/repos/' +
+                            os.environ['GITHUB_REPOSITORY'] + '/releases/tags/' + tag,
+                            headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                                     'Accept': 'application/vnd.github+json'})
+          try:
+              with urlopen(request, timeout=30) as response:
+                  published = not json.load(response)['draft']
+          except HTTPError as error:
+              if error.code != 404:
+                  raise
+              published = False
+          if not published:
+              existing = subprocess.run(['git', 'rev-parse', '--verify',
+                                         'refs/tags/' + tag + '^{commit}'],
+                                        capture_output=True, text=True)
+              if existing.returncode == 0 and existing.stdout.strip() != os.environ['GITHUB_SHA']:
+                  raise ValueError('Version tag already points to another commit; increase VERSION')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'version={version}\ntag={tag}\nskip={str(published).lower()}\n')
+          print(f'{tag}: ' + ('already published; skipping' if published else 'building'))
+
+      - name: Install build dependencies
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          chcp 65001 > $null
+          $ErrorActionPreference = 'Stop'
+          python -m pip install -r requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+
+      - name: Prepare OpenSSL runtime
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          chcp 65001 > $null
+          python scripts/prepare_ci_openssl.py
+          if ($LASTEXITCODE -ne 0) { throw 'OpenSSL preparation failed' }
+
+      - name: Check device communication imports
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          chcp 65001 > $null
+          python -c "import device_service; import sslpsk_pmd3; import webview; print('Device and UI imports: OK')"
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency check failed' }
+
+      - name: Build Windows app
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          chcp 65001 > $null
+          python -m PyInstaller --noconfirm --clean --distpath build/ci/dist --workpath build/ci/pyinstaller "Bloom Traveler.spec"
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed' }
+
+      - name: Check packaged app
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          chcp 65001 > $null
+          python scripts/ci_frozen_smoke.py "build/ci/dist/Bloom Traveler/Bloom Traveler.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged app check failed' }
+
+      - name: Compress release
+        if: steps.version.outputs.skip != 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          chcp 65001 > $null
+          $ErrorActionPreference = 'Stop'
+          $folder = Join-Path $env:GITHUB_WORKSPACE 'build/ci/release'
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          $archive = Join-Path $folder "BloomTraveler_$env:RELEASE_VERSION.7z"
+          Push-Location 'build/ci/dist'
+          try {
+            & 'C:/Program Files/7-Zip/7z.exe' a -t7z -mx=9 -ms=on $archive 'Bloom Traveler'
+            if ($LASTEXITCODE -ne 0) { throw 'Compression failed' }
+          } finally { Pop-Location }
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Encoding utf8NoBOM "$archive.sha256.txt"
+          python -m pip freeze | Set-Content -Encoding utf8NoBOM (Join-Path $folder 'requirements-resolved.txt')
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency manifest failed' }
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          chcp 65001 > $null
+          $ErrorActionPreference = 'Stop'
+          $repo = $env:GITHUB_REPOSITORY
+          $tag = $env:RELEASE_TAG
+          $assets = @(Get-ChildItem 'build/ci/release' -File | ForEach-Object { $_.FullName })
+          $listing = gh release list --repo $repo --limit 1000 --json tagName,isDraft
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list releases' }
+          $existing = @($listing | ConvertFrom-Json) | Where-Object { $_.tagName -eq $tag }
+          if ($existing) {
+            if (-not $existing.isDraft) { throw 'Release was already published; refusing to overwrite' }
+            gh release upload $tag @assets --repo $repo --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
+            gh release edit $tag --repo $repo --draft=false
+            if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+          } else {
+            $options = @('--repo', $repo, '--target', $env:GITHUB_SHA, '--title', "Bloom Traveler $tag", '--generate-notes')
+            if ($tag.Contains('-')) { $options += @('--prerelease', '--latest=false') }
+            gh release create $tag @assets @options
+            if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }
+          }

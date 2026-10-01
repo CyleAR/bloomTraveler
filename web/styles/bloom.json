@@ -1,0 +1,180 @@
+{
+  "version": 8,
+  "name": "Bloom Walk",
+  "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+  "sources": {
+    "openmaptiles": {
+      "type": "vector",
+      "url": "https://tiles.openfreemap.org/planet",
+      "attribution": "<a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a> &copy; <a href=\"https://openmaptiles.org/\" target=\"_blank\" rel=\"noopener\">OpenMapTiles</a> &copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap contributors</a>"
+    }
+  },
+  "layers": [
+    {
+      "id": "bloom-land", "type": "background",
+      "paint": {"background-color": "#48af66"}
+    },
+    {
+      "id": "bloom-grass-texture", "type": "background",
+      "paint": {"background-color": "#48af66", "background-opacity": 0.38}
+    },
+    {
+      "id": "bloom-vegetation", "type": "fill",
+      "source": "openmaptiles", "source-layer": "landcover",
+      "filter": ["==", "class", "wood"],
+      "paint": {"fill-color": "#278e60", "fill-opacity": 0.12}
+    },
+    {
+      "id": "bloom-grass", "type": "fill",
+      "source": "openmaptiles", "source-layer": "landcover",
+      "filter": ["in", "class", "grass", "farmland"],
+      "paint": {"fill-color": "#75bc63", "fill-opacity": 0.08}
+    },
+    {
+      "id": "bloom-neighborhoods", "type": "fill",
+      "source": "openmaptiles", "source-layer": "landuse",
+      "filter": ["in", "class", "residential", "commercial", "industrial"],
+      "paint": {"fill-color": "#50b365", "fill-opacity": 0.04}
+    },
+    {
+      "id": "bloom-recreation", "type": "fill",
+      "source": "openmaptiles", "source-layer": "landuse",
+      "filter": ["in", "class", "recreation_ground", "village_green", "allotments", "cemetery"],
+      "paint": {"fill-color": "#52b767", "fill-opacity": 0.08}
+    },
+    {
+      "id": "bloom-parks", "type": "fill",
+      "source": "openmaptiles", "source-layer": "park",
+      "paint": {"fill-color": "#369f5e", "fill-opacity": 0.1}
+    },
+    {
+      "id": "bloom-water", "type": "fill",
+      "source": "openmaptiles", "source-layer": "water",
+      "paint": {"fill-color": "#55bfe4", "fill-outline-color": "#55bfe4"}
+    },
+    {
+      "id": "bloom-streams", "type": "line",
+      "source": "openmaptiles", "source-layer": "waterway", "minzoom": 10,
+      "layout": {"line-cap": "round", "line-join": "round"},
+      "paint": {
+        "line-color": "#55bfe4",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 14, 2, 18, 7]
+      }
+    },
+    {
+      "id": "bloom-buildings", "type": "fill",
+      "source": "openmaptiles", "source-layer": "building", "minzoom": 14,
+      "paint": {
+        "fill-color": "#28733e",
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0.06, 16, 0.16, 18, 0.2]
+      }
+    },
+    {
+      "id": "bloom-paths", "type": "line",
+      "source": "openmaptiles", "source-layer": "transportation", "minzoom": 13,
+      "filter": ["in", "class", "path", "track"],
+      "layout": {"line-cap": "round", "line-join": "round"},
+      "paint": {
+        "line-color": "#efe5bb", "line-opacity": 0.85,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.5, 16, 2, 19, 5]
+      }
+    },
+    {
+      "id": "bloom-road-edges", "type": "line",
+      "source": "openmaptiles", "source-layer": "transportation", "minzoom": 8,
+      "filter": ["in", "class", "motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service"],
+      "layout": {"line-cap": "round", "line-join": "round"},
+      "paint": {
+        "line-color": "#acc98d", "line-opacity": 0,
+        "line-width": ["interpolate", ["linear"], ["zoom"],
+          8, ["match", ["get", "class"], ["motorway", "trunk"], 1.8, 0.2],
+          12, ["match", ["get", "class"], ["motorway", "trunk", "primary"], 4, ["secondary", "tertiary"], 2.5, 1],
+          16, ["match", ["get", "class"], ["motorway", "trunk", "primary"], 11, ["secondary", "tertiary"], 8, 5],
+          19, ["match", ["get", "class"], ["motorway", "trunk", "primary"], 27, ["secondary", "tertiary"], 20, 13]
+        ]
+      }
+    },
+    {
+      "id": "bloom-roads", "type": "line",
+      "source": "openmaptiles", "source-layer": "transportation", "minzoom": 8,
+      "filter": ["in", "class", "motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service"],
+      "layout": {"line-cap": "round", "line-join": "round"},
+      "paint": {
+        "line-color": "#efe5bb",
+        "line-width": ["interpolate", ["linear"], ["zoom"],
+          8, ["match", ["get", "class"], ["motorway", "trunk"], 1, 0.1],
+          12, ["match", ["get", "class"], ["motorway", "trunk", "primary"], 2.8, ["secondary", "tertiary"], 1.5, 0.5],
+          16, ["match", ["get", "class"], ["motorway", "trunk", "primary"], 9, ["secondary", "tertiary"], 6, 3.5],
+          19, ["match", ["get", "class"], ["motorway", "trunk", "primary"], 24, ["secondary", "tertiary"], 17, 10]
+        ]
+      }
+    },
+    {
+      "id": "bloom-railways", "type": "line",
+      "source": "openmaptiles", "source-layer": "transportation", "minzoom": 13,
+      "filter": ["==", "class", "rail"],
+      "layout": {"visibility": "none"},
+      "paint": {
+        "line-color": "#94ac7f", "line-opacity": 0.55, "line-dasharray": [2, 2],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 18, 2]
+      }
+    },
+    {
+      "id": "bloom-park-names", "type": "symbol",
+      "source": "openmaptiles", "source-layer": "park", "minzoom": 16,
+      "layout": {
+        "text-field": ["coalesce", ["get", "name:ko"], ["get", "name"], ["get", "name:en"]],
+        "text-font": ["Noto Sans Regular"], "text-size": 11, "text-max-width": 8,
+        "text-padding": 15
+      },
+      "paint": {"text-color": "#487347", "text-halo-color": "#e4f2d7", "text-halo-width": 1.5}
+    },
+    {
+      "id": "bloom-street-names", "type": "symbol",
+      "source": "openmaptiles", "source-layer": "transportation_name", "minzoom": 16,
+      "filter": ["!in", "class", "motorway", "trunk", "rail"],
+      "layout": {
+        "symbol-placement": "line", "symbol-spacing": 550,
+        "text-field": ["coalesce", ["get", "name:ko"], ["get", "name"], ["get", "name:en"]],
+        "text-font": ["Noto Sans Regular"], "text-size": 10, "text-padding": 10
+      },
+      "paint": {"text-color": "#466247", "text-halo-color": "#f4f4df", "text-halo-width": 1.5}
+    },
+    {
+      "id": "bloom-local-names", "type": "symbol",
+      "source": "openmaptiles", "source-layer": "place", "minzoom": 12,
+      "filter": ["in", "class", "suburb", "quarter", "neighbourhood"],
+      "layout": {
+        "text-field": ["coalesce", ["get", "name:ko"], ["get", "name"], ["get", "name:en"]],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 12, 11, 16, 13],
+        "text-padding": 24, "text-max-width": 8
+      },
+      "paint": {"text-color": "#35553d", "text-halo-color": "#eef5e8", "text-halo-width": 1.5}
+    },
+    {
+      "id": "bloom-village-names", "type": "symbol",
+      "source": "openmaptiles", "source-layer": "place", "minzoom": 10,
+      "filter": ["in", "class", "village", "hamlet"],
+      "layout": {
+        "text-field": ["coalesce", ["get", "name:ko"], ["get", "name"], ["get", "name:en"]],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 11, 16, 13],
+        "text-padding": 24, "text-max-width": 8
+      },
+      "paint": {"text-color": "#35553d", "text-halo-color": "#eef5e8", "text-halo-width": 1.5}
+    },
+    {
+      "id": "bloom-town-names", "type": "symbol",
+      "source": "openmaptiles", "source-layer": "place", "minzoom": 5,
+      "filter": ["in", "class", "city", "town"],
+      "layout": {
+        "text-field": ["coalesce", ["get", "name:ko"], ["get", "name"], ["get", "name:en"]],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 5, 11, 12, 14, 16, 15],
+        "text-padding": 25, "text-max-width": 8
+      },
+      "paint": {"text-color": "#35553d", "text-halo-color": "#eef5e8", "text-halo-width": 1.5}
+    }
+  ]
+}

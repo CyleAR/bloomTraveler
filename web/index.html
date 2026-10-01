@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Bloom Traveler</title>
+  <link rel="icon" href="/app.ico">
+  <link rel="preload" href="/fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="/app.css">
+  <script defer src="/vendor/maplibre-gl.js"></script>
+  <script defer src="/vendor/lucide.js"></script>
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><strong>Bloom Traveler</strong><button id="about-button" class="icon-button" title="프로그램 정보" aria-label="프로그램 정보" aria-haspopup="dialog"><i data-lucide="info"></i></button></div>
+    <div class="file-tools">
+      <button id="new-route" class="icon-button" title="새 경로" aria-label="새 경로"><i data-lucide="file-plus-2"></i></button>
+      <button id="import-gpx" class="icon-button" title="GPX 가져오기" aria-label="GPX 가져오기"><i data-lucide="upload"></i></button>
+      <button id="export-gpx" class="icon-button" title="GPX 내보내기" aria-label="GPX 내보내기" disabled><i data-lucide="download"></i></button>
+      <button id="save-route" class="icon-button" title="경로 저장" aria-label="경로 저장" disabled><i data-lucide="save"></i></button>
+    </div>
+    <button id="connection-button" class="connection-button" title="기기 연결 로그"><span id="connection-dot" class="status-dot"></span><span id="connection-text">기기 검색 중</span><i data-lucide="chevron-down"></i></button>
+  </header>
+  <main class="workspace">
+    <section class="map-pane" aria-label="지도">
+      <div id="map"></div>
+      <div id="map-error" class="map-error" hidden><i data-lucide="cloud-off"></i><span>지도를 불러오지 못했습니다</span><button id="retry-map">다시 시도</button></div>
+      <div class="search-area">
+        <form id="search-form" class="search-form" role="search">
+          <i data-lucide="search"></i><input id="place-search" aria-label="장소 검색" placeholder="장소 검색" autocomplete="off" maxlength="200">
+          <button id="search-submit" class="icon-button" type="submit" title="검색" aria-label="검색"><i data-lucide="arrow-right"></i></button>
+          <button id="close-search" class="icon-button" type="button" title="검색 결과 닫기" aria-label="검색 결과 닫기" hidden><i data-lucide="x"></i></button>
+        </form>
+        <form id="coordinate-form" class="coordinate-form">
+          <i data-lucide="map-pin"></i><input id="coordinate-input" aria-label="이동할 위도, 경도" placeholder="위도, 경도" title="예: 23.060358,72.566692" autocomplete="off" spellcheck="false" maxlength="80" required>
+          <button id="coordinate-go" type="submit" class="button blue" title="입력한 좌표로 기기 GPS 순간이동"><i data-lucide="navigation-2"></i>좌표로 이동</button>
+        </form>
+        <div id="search-results" class="search-results" aria-label="검색 결과" hidden></div>
+      </div>
+      <div class="map-mode" aria-label="지도 편집 모드">
+        <button id="mode-select" class="icon-button active" title="장소 선택" aria-label="장소 선택" aria-pressed="true"><i data-lucide="mouse-pointer-2"></i></button>
+        <button id="mode-route" class="icon-button" title="경로 지점 추가" aria-label="경로 지점 추가" aria-pressed="false"><i data-lucide="route"></i></button>
+      </div>
+      <div class="map-tools">
+        <button id="real-location" class="icon-button" title="내 실제 위치로 지도 이동" aria-label="내 실제 위치로 지도 이동"><i data-lucide="locate-fixed"></i></button>
+        <button id="sim-location" class="icon-button" title="모의 GPS 위치로 지도 이동" aria-label="모의 GPS 위치로 지도 이동"><i data-lucide="navigation"></i></button>
+        <button id="fit-route" class="icon-button" title="전체 경로 보기" aria-label="전체 경로 보기"><i data-lucide="scan"></i></button>
+        <button id="follow-map" class="icon-button active" title="모의 GPS 따라가기" aria-label="모의 GPS 따라가기" aria-pressed="true"><i data-lucide="focus"></i></button>
+      </div>
+      <div id="selected-place" class="selected-place" hidden>
+        <div class="place-heading"><span class="selection-icon"><i data-lucide="map-pin"></i></span><div><strong id="selected-name"></strong><span id="selected-address"></span></div><button id="close-place" class="icon-button" title="선택 닫기" aria-label="선택 닫기"><i data-lucide="x"></i></button></div>
+        <div class="place-coords"><span id="selected-coords"></span><button id="copy-coords" class="icon-button" title="좌표 복사" aria-label="좌표 복사"><i data-lucide="copy"></i></button></div>
+        <div class="place-actions"><button id="add-place" class="button teal"><i data-lucide="plus"></i>경로 추가</button><button id="teleport-place" class="button blue"><i data-lucide="zap"></i>순간이동</button><button id="favorite-place" class="icon-button favorite" title="장소 즐겨찾기" aria-label="장소 즐겨찾기"><i data-lucide="star"></i></button></div>
+      </div>
+      <div class="map-bottom"><span id="map-position-label">실제 위치 확인 중</span><select id="map-style" aria-label="지도 스타일"><option value="osm">기본 지도</option><option value="bloom">심플 지도</option></select></div>
+    </section>
+    <aside class="sidebar" aria-label="경로와 이동 제어">
+      <div class="route-summary">
+        <div class="route-title"><span class="eyebrow">현재 경로</span><button id="rename-route" class="icon-button" title="경로 이름 변경" aria-label="경로 이름 변경"><i data-lucide="pencil"></i></button></div>
+        <h1 id="route-name">새 경로</h1>
+        <div class="route-stats"><div><span>총 길이</span><strong id="route-length">0 m</strong></div><div><span>지점</span><strong id="point-count">0</strong></div><div><span>예상 시간</span><strong id="route-time">0분</strong></div></div>
+      </div>
+      <nav class="tabs" aria-label="라이브러리"><button class="tab active" data-tab="route" aria-selected="true"><i data-lucide="route"></i>경로</button><button class="tab" data-tab="routes" aria-selected="false"><i data-lucide="folder-open"></i>보관함</button><button class="tab" data-tab="places" aria-selected="false"><i data-lucide="star"></i>장소</button></nav>
+      <div id="route-view" class="side-view active">
+        <div class="list-toolbar"><span id="route-list-title">경로 지점</span><div><button id="undo-route" class="icon-button" title="실행 취소" aria-label="실행 취소" disabled><i data-lucide="undo-2"></i></button><button id="redo-route" class="icon-button" title="다시 실행" aria-label="다시 실행" disabled><i data-lucide="redo-2"></i></button><button id="reverse-route" class="icon-button" title="경로 순서 뒤집기" aria-label="경로 순서 뒤집기"><i data-lucide="arrow-down-up"></i></button><button id="add-coordinate" class="icon-button" title="좌표로 지점 추가" aria-label="좌표로 지점 추가"><i data-lucide="plus"></i></button><button id="clear-route" class="icon-button danger" title="경로 지우기" aria-label="경로 지우기"><i data-lucide="trash-2"></i></button></div></div>
+        <div id="route-list" class="route-list" tabindex="0" aria-label="경로 지점 목록"><div id="route-list-inner"></div></div>
+        <div class="repeat-settings">
+          <label class="switch-row"><span><i data-lucide="repeat-2"></i>경로 반복</span><input id="repeat-route" type="checkbox" role="switch"><span class="switch-track"></span></label>
+          <div id="repeat-options" hidden>
+            <div class="return-modes" role="group" aria-label="복귀 방식"><button data-return="instant" class="active" title="마지막 지점에서 출발점으로 즉시 복귀"><i data-lucide="zap"></i>즉시</button><button data-return="straight" title="출발점까지 직선 복귀"><i data-lucide="move-up-right"></i>직선</button><button data-return="reverse" title="경로를 거슬러 역순 복귀"><i data-lucide="undo-2"></i>역순</button></div>
+            <div class="repeat-fields"><label>횟수<select id="repeat-count"><option value="0">무한</option><option value="2">2회</option><option value="3">3회</option><option value="5">5회</option><option value="10">10회</option><option value="custom">직접 입력</option></select></label><label id="custom-count-field" hidden>반복 횟수<input id="custom-count" type="number" min="1" max="1000000" value="20"></label><label id="return-speed-field">복귀 속도<div class="unit-input"><input id="return-speed" type="number" min="0.1" max="1000" step="0.1" value="20"><span>km/h</span></div></label></div>
+          </div>
+        </div>
+      </div>
+      <div id="routes-view" class="side-view"><div class="library-toolbar"><span>저장한 경로</span><span id="saved-route-count">0</span></div><input id="route-filter" class="library-filter" placeholder="경로 이름 검색" aria-label="저장한 경로 검색"><div id="saved-routes" class="library-list"></div></div>
+      <div id="places-view" class="side-view"><div class="library-toolbar"><span>즐겨찾는 장소</span><span id="saved-place-count">0</span></div><input id="place-filter" class="library-filter" placeholder="장소 이름 검색" aria-label="즐겨찾기 검색"><div id="saved-places" class="library-list"></div></div>
+      <div class="control-panel">
+        <div class="speed-heading"><label for="speed-input">기본 속도</label><div class="unit-input"><input id="speed-input" type="number" min="0.1" max="1000" step="0.1" value="15"><span>km/h</span></div></div><input id="speed-slider" type="range" min="0.1" max="100" step="0.1" value="15" aria-label="기본 이동 속도">
+        <div class="playback-status"><span id="playback-status">대기 중</span><span id="cycle-status"></span></div><div class="progress-track"><div id="progress-fill"></div></div>
+        <div class="playback-buttons"><button id="play-route" class="button green"><i data-lucide="play"></i><span>걷기 시작</span></button><button id="stop-route" class="icon-button stop" title="이동 정지" aria-label="이동 정지"><i data-lucide="square"></i></button><button id="goto-start" class="icon-button blue-soft" title="출발점으로 순간이동" aria-label="출발점으로 순간이동"><i data-lucide="flag"></i></button></div>
+        <div class="device-controls"><label class="switch-row heartbeat"><span><i data-lucide="heart-pulse"></i>하트비트</span><input id="heartbeat" type="checkbox" role="switch"><span class="switch-track"></span></label>
+        <button id="restore-gps" class="restore-button"><i data-lucide="rotate-ccw"></i>기기의 모의 GPS 해제</button></div>
+      </div>
+    </aside>
+  </main>
+  <footer class="app-footer"><span id="position-status">모의 GPS 전송 없음</span><span><span class="legend-dot real"></span>실제 위치<span class="legend-dot simulated"></span>모의 GPS</span></footer>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <input id="gpx-file" type="file" accept=".gpx,application/gpx+xml,text/xml" hidden>
+  <dialog id="editor-dialog"><form id="editor-form"><div class="dialog-heading"><h2 id="dialog-title"></h2><button type="button" id="close-dialog" class="icon-button" title="닫기" aria-label="닫기"><i data-lucide="x"></i></button></div><div id="dialog-fields"></div><p id="dialog-error" class="form-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" id="cancel-dialog" class="button secondary">취소</button><button type="submit" id="confirm-dialog" class="button teal">저장</button></div></form></dialog>
+  <dialog id="log-dialog"><div class="dialog-heading"><h2>기기 연결</h2><button id="close-log" class="icon-button" title="닫기" aria-label="닫기"><i data-lucide="x"></i></button></div><p id="log-connection"></p><div id="device-logs" class="device-logs"></div></dialog>
+  <dialog id="about-dialog" aria-labelledby="about-title">
+    <div class="dialog-heading"><h2 id="about-title">프로그램 정보</h2><button id="close-about" class="icon-button" title="닫기" aria-label="프로그램 정보 닫기" autofocus><i data-lucide="x"></i></button></div>
+    <div class="about-body">
+      <div class="about-product"><strong>Bloom Traveler</strong><span id="about-version"></span><a href="https://github.com/CyleAR/bloomTraveler" target="_blank" rel="noopener noreferrer">프로젝트 · 소스 코드</a></div>
+      <h3>오픈소스 라이선스 및 출처</h3>
+      <p class="about-attribution">지도 데이터 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a></p>
+      <p id="license-status" role="status">라이선스 불러오는 중...</p>
+      <div id="license-list"></div>
+    </div>
+  </dialog>
+</body>
+</html>

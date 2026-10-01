@@ -1,3 +1,69 @@
-venv
-build
-dist
+# Local Python environments
+/venv/
+/venv-*/
+/.venv/
+/.venv-*/
+/env/
+/ENV/
+
+# Python caches and packaging metadata
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# PyInstaller output and release packages (keep both .spec files)
+/build/
+/dist/
+/build-*/
+/dist-*/
+/*.exe
+/*.msi
+/*.zip
+/*.7z
+/*.rar
+
+# Preview data, diagnostics, screenshots, and test reports
+/.qa-data/
+/artifacts/
+*.log
+
+# User route/place storage and device pairing secrets
+*.gpx
+!/tests/fixtures/*.gpx
+/library.json
+/webview/
+/userdata/
+/.pymobiledevice3/
+/pair_records/
+/pairing_records/
+.env
+.env.*
+!.env.example
+!.env.template
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Machine-local editor/agent settings and temporary files
+/.idea/
+/.vscode/
+/.agents/
+/.codex/
+/tests/
+*.tmp
+*.bak
+*~
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -10,6 +10,8 @@ import sys
 from urllib.request import Request, urlopen
 from zipfile import ZipFile
 
+from packaging.utils import canonicalize_name
+
 ROOT = Path(__file__).resolve().parent
 DESTINATION = ROOT / "web" / "licenses"
 SOURCES = {
@@ -94,6 +96,7 @@ def generate_notices(entries):
         if not any(str(Path(distribution.locate_file(file)).resolve()).casefold() in paths for file in files):
             continue
         name = distribution.metadata["Name"]
+        package_name = canonicalize_name(name)
         documents, seen = [], set()
         for file in files:
             if not any(word in Path(file).name.lower() for word in ("license", "licence", "copying", "notice", "copyright")):
@@ -106,16 +109,16 @@ def generate_notices(entries):
                 continue
             seen.add(document["text"])
             documents.append(document)
-        if not documents and name.lower() in ("bpylist2", "proxy-tools"):
-            documents = [source(name.lower())]
+        if not documents and package_name in ("bpylist2", "proxy-tools"):
+            documents = [source(package_name)]
         if not documents:
             raise ValueError(f"Missing license text for bundled dependency: {name}")
-        if name.lower() in ("certifi", "tqdm"):
+        if package_name in ("certifi", "tqdm"):
             documents.append(source("mpl-2"))
-        if name.lower() == "python-dateutil":
+        if package_name == "python-dateutil":
             documents.append(source("photon"))
         packages.append({"name": name, "version": distribution.version,
-                         "license": {"proxy-tools": "BSD-3-Clause", "pyinstaller": "GPL-2.0-or-later + bootloader exception"}.get(name.lower(), license_label(distribution.metadata)),
+                         "license": {"proxy-tools": "BSD-3-Clause", "pyinstaller": "GPL-2.0-or-later + bootloader exception"}.get(package_name, license_label(distribution.metadata)),
                          "category": "runtime", "url": project_url(distribution.metadata),
                          "documents": documents})
     notices = [

@@ -1,6 +1,6 @@
 # Bloom Traveler
 
-탈옥하지 않은 iPhone·iPad의 GPS 위치를 변경하는 Windows 앱입니다.
+iPhone·iPad의 GPS 위치를 시뮬레이션하는 프로그램.
 
 ## 주요 기능
 
@@ -38,8 +38,6 @@ iOS 17.0~17.3의 USB 터널 연결은 지원하지 않습니다. iOS 17.4 이상
 Python 3.10 기준입니다. 프로젝트 폴더에서 PowerShell로 실행합니다.
 
 ```powershell
-chcp 65001
-$env:PYTHONUTF8 = '1'
 python -m venv .venv-modern
 .\.venv-modern\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
 .\.venv-modern\Scripts\python.exe main.py
@@ -48,20 +46,8 @@ python -m venv .venv-modern
 빌드:
 
 ```powershell
-chcp 65001
-$env:PYTHONUTF8 = '1'
 .\.venv-modern\Scripts\python.exe -m PyInstaller --noconfirm "Bloom Traveler.spec"
 ```
-
-배포할 폴더는 `dist\Bloom Traveler`입니다. `build`는 중간 산출물입니다.
-
-테스트는 `.venv-modern\Scripts\python.exe -m unittest discover -s tests -v`로 실행합니다. 기기 없이 실행하려면 `main.py --browser --preview --port 8840`을 사용합니다.
-
-## 자동 배포
-
-`main.py`의 `VERSION`을 올리고 `main` 또는 `master`에 푸시하면 GitHub Actions가 Windows 빌드 → `.7z` 압축 → 버전 태그·릴리즈 생성을 처리합니다. 이미 배포한 버전은 건너뜁니다.
-
-`v2.0.6`처럼 버전과 일치하는 태그를 푸시하거나 Actions의 **Windows Release → Run workflow**로도 실행할 수 있습니다. 별도 토큰 설정은 필요 없습니다.
 
 ## 주의 사항
 
@@ -69,7 +55,7 @@ $env:PYTHONUTF8 = '1'
 
 ## 작동 확인 기기
 
-iPhone 15 Pro (iOS 26), iPad Air 4 (iPadOS 26.2), iPhone 17 (iOS 26.3), iPhone 12 mini (iOS 18.5)
+iPad Air 4 (iPadOS 27), iPhone 17 (iOS 27)
 
-Thanks: reathena, oob
+Thanks to: reathena, oob
 

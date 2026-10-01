@@ -104,6 +104,13 @@ jobs:
           python -m pip install -r requirements-build.txt
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
 
+      - name: Check license collection
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          chcp 65001 > $null
+          python -m unittest discover -s scripts -p test_build_licenses.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'License collection regression check failed' }
+
       - name: Prepare OpenSSL runtime
         if: steps.version.outputs.skip != 'true'
         run: |

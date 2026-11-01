@@ -38,6 +38,15 @@ class SearchHistoryTests(unittest.TestCase):
         self.assertEqual(Library(self.path).snapshot()["recent_searches"],
                          [f"Query {index}" for index in reversed(range(5, 25))])
 
+    def test_existing_history_keeps_twenty_most_recent(self):
+        queries = [f"Query {index}" for index in reversed(range(25))]
+        self.path.write_text(json.dumps({"version": 1, "routes": [], "places": [],
+                                         "recent_searches": queries}), encoding="utf-8")
+        restored = Library(self.path)
+        self.assertEqual(restored.snapshot()["recent_searches"], queries[:20])
+        restored.remember_search("Newest")
+        self.assertEqual(Library(self.path).snapshot()["recent_searches"], ["Newest"] + queries[:19])
+
     def test_remove_and_clear_preserve_routes_places_preferences(self):
         self.library.save("routes", {"name": "Route", "points": [{"lat": 0, "lon": 0}]})
         self.library.save("places", {"name": "Place", "lat": 0, "lon": 0})

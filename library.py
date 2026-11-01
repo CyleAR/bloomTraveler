@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from routes import Route, RoutePoint
 
+RECENT_SEARCH_LIMIT = 20
+
 
 class Library:
     def __init__(self, path):
@@ -23,7 +25,7 @@ class Library:
             self.data = data
             history = self.data.get("recent_searches", [])
             self.data["recent_searches"] = [query.strip() for query in history
-                                            if isinstance(query, str) and 0 < len(query.strip()) <= 200][:20] if isinstance(history, list) else []
+                                            if isinstance(query, str) and 0 < len(query.strip()) <= 200][:RECENT_SEARCH_LIMIT] if isinstance(history, list) else []
             preferences = self.data.get("preferences")
             if isinstance(preferences, dict) and preferences.get("map_style") == "positron":
                 preferences["map_style"] = "osm"
@@ -59,7 +61,7 @@ class Library:
             data = self.snapshot()
             previous = data["recent_searches"]
             history = [query] + [item for item in previous if item.casefold() != query.casefold()]
-            data["recent_searches"] = history[:20]
+            data["recent_searches"] = history[:RECENT_SEARCH_LIMIT]
             if data["recent_searches"] != previous:
                 self._write(data)
             return data["recent_searches"]

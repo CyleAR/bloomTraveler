@@ -1,5 +1,39 @@
 """Exercise real library drag/drop in an isolated preview session."""
 
+def drag_library_item(page, base, host, kind, identifier, target_id, position):
+    source = page.locator(f'{host} [data-id="{identifier}"] .library-grip')
+    target = page.locator(f'{host} [data-id="{target_id}"]')
+    source.scroll_into_view_if_needed()
+    source.hover()
+    box = source.bounding_box()
+    page.mouse.down()
+    released = False
+    try:
+        page.mouse.move(box["x"] + box["width"] / 2 + 10,
+                        box["y"] + box["height"] / 2, steps=5)
+        page.wait_for_function(
+            "([host,id])=>document.querySelector(host+' .library-dragging')?.dataset.id===id",
+            arg=[host, identifier], timeout=5000)
+        # Scroll only after the intended source has started dragging; drag_to can
+        # scroll the target first and then grab a different row in a short list.
+        target.scroll_into_view_if_needed()
+        box = target.bounding_box()
+        x = box["x"] + min(70, box["width"] - 5)
+        y = box["y"] + (4 if position == "before" else box["height"] - 4)
+        page.mouse.move(x, y, steps=8)
+        page.mouse.move(x + 1, y)
+        with page.expect_response(lambda response: response.url == base + "/api/library/move"
+                                  and response.request.method == "POST", timeout=10000) as pending:
+            page.mouse.up()
+            released = True
+        response = pending.value
+        assert response.ok, response.text()
+        assert response.request.post_data_json == {
+            "kind": kind, "id": identifier, "target_id": target_id, "position": position}
+    finally:
+        if not released:
+            page.mouse.up()
+
 
 def check_library_order(page, base):
     bootstrap = page.request.get(base + "/api/bootstrap").json()
@@ -20,7 +54,7 @@ def check_library_order(page, base):
             ids[name] = response.json()["id"]
         fixtures[kind] = ids
     page.reload()
-    page.wait_for_selector("#map-style")
+    page.wait_for_function("window.bloomMap")
 
     def wait_order(host, expected):
         page.wait_for_function(
@@ -33,9 +67,7 @@ def check_library_order(page, base):
         host = "#saved-routes" if kind == "routes" else "#saved-places"
         page.locator(f'[data-tab="{kind}"]').click()
         wait_order(host, [a, b, c, d])
-        source = page.locator(f'{host} [data-id="{a}"] .library-grip')
-        target = page.locator(f'{host} [data-id="{c}"]')
-        source.drag_to(target, target_position={"x": 70, "y": target.bounding_box()["height"] - 4})
+        drag_library_item(page, base, host, kind, a, c, "after")
         wait_order(host, [b, c, a, d])
         assert not page.locator("#editor-dialog").is_visible()
         assert page.request.get(base + "/api/library").json()[kind][2]["id"] == a
@@ -52,15 +84,14 @@ def check_library_order(page, base):
         filter_input = page.locator("#route-filter" if kind == "routes" else "#place-filter")
         filter_input.fill("Visible")
         wait_order(host, [c, a])
-        source = page.locator(f'{host} [data-id="{a}"] .library-grip')
-        source.drag_to(page.locator(f'{host} [data-id="{c}"]'), target_position={"x": 70, "y": 4})
+        drag_library_item(page, base, host, kind, a, c, "before")
         wait_order(host, [a, c])
         filter_input.fill("")
         wait_order(host, [b, a, c, d])
         page.locator(f'{host} [data-id="{a}"] .library-grip').press("ArrowDown")
         wait_order(host, [b, c, a, d])
         page.reload()
-        page.wait_for_selector("#map-style")
+        page.wait_for_function("window.bloomMap")
         page.locator(f'[data-tab="{kind}"]').click()
         wait_order(host, [b, c, a, d])
     final_state = page.request.get(base + "/api/state").json()

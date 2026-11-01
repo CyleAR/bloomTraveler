@@ -35,18 +35,23 @@ def check_search_history(page, base):
             search(query)
         assert history() == ["서울역", "東京大学"]
         page.reload()
-        page.wait_for_selector("#map-style")
+        page.wait_for_function("window.bloomMap")
         field.click()
         page.locator(".recent-search-open").first.wait_for(state="visible")
         assert page.locator(".recent-search-open").all_text_contents() == ["서울역", "東京大学"]
-        field.fill("東京")
-        assert page.locator(".recent-search-open").all_text_contents() == ["東京大学"]
+        for text in ("東京", "unmatched query", "", "서울"):
+            field.fill(text)
+            assert page.locator(".recent-search-open").all_text_contents() == ["서울역", "東京大学"]
+            assert history() == ["서울역", "東京大学"], "Typing must not reorder history"
         assert len(lookups) == 3, "Typing must not make search requests"
+        search("東京大学")
+        assert history() == ["東京大学", "서울역"], "Completed searches must update history order"
         field.fill("")
+        assert page.locator(".recent-search-open").all_text_contents() == ["東京大学", "서울역"]
         page.locator(".recent-search-open").filter(has_text="서울역").click()
         page.locator(".search-result").wait_for(state="visible")
         page.wait_for_function("!document.querySelector('#search-submit').disabled")
-        assert len(lookups) == 4 and history() == ["서울역", "東京大学"]
+        assert len(lookups) == 5 and history() == ["서울역", "東京大学"]
         field.fill("")
         field.press("ArrowDown")
         assert page.locator(".recent-search-open").first.evaluate("e=>e===document.activeElement")
@@ -55,18 +60,19 @@ def check_search_history(page, base):
         field.click()
         page.locator(".recent-search-delete").first.click()
         page.wait_for_function("document.querySelectorAll('.recent-search-open').length===1")
-        assert history() == ["東京大学"] and len(lookups) == 4
+        assert history() == ["東京大学"] and len(lookups) == 5
         page.locator("#clear-search-history").click()
         page.wait_for_function("document.querySelector('#search-results').hidden")
         assert history() == []
         page.reload()
-        page.wait_for_selector("#map-style")
+        page.wait_for_function("window.bloomMap")
         field.click()
         assert not page.locator("#search-results").is_visible()
         state = page.request.get(base + "/api/state").json()
         assert state["position"] == bootstrap["state"]["position"]
         assert state["heartbeat"] == bootstrap["state"]["heartbeat"]
         return {"deduplicated": True, "persisted": True, "replay": True,
-                "deleteAndClear": True, "localFilterOnly": True, "deviceUnchanged": True}
+                "deleteAndClear": True, "unfilteredWhileTyping": True,
+                "updatesAfterSearch": True, "deviceUnchanged": True}
     finally:
         page.unroute(pattern, respond)

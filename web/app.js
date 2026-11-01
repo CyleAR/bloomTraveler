@@ -577,8 +577,7 @@ async function changeSearchHistory(path, data) {
 }
 function showRecentSearches() {
   if($("search-submit").disabled)return;
-  const filter=$("place-search").value.trim().toLocaleLowerCase();
-  const queries=(library.recent_searches || []).filter(query=>query.toLocaleLowerCase().includes(filter));
+  const queries=library.recent_searches || [];
   if(!queries.length){hideSearch();return;}
   searchView='history';$("search-results").hidden=false;$("close-search").hidden=false;
   $("search-results").innerHTML=`<div class="recent-search-heading"><strong>최근 검색</strong><button id="clear-search-history" class="icon-button" title="최근 검색 전체 삭제" aria-label="최근 검색 전체 삭제">${glyph('trash-2')}</button></div>`+

@@ -1,4 +1,4 @@
-Bloom Traveler - Third-party licenses and notices
+Bloom Traveler 2.1.0 - Third-party licenses and notices
 Project: https://github.com/CyleAR/bloomTraveler
 
 ========================================================================

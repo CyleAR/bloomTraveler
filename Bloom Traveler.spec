@@ -2,6 +2,7 @@
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
 from PyInstaller.utils.hooks import copy_metadata
 from pathlib import Path
+from shutil import copyfile
 import os
 import sys
 
@@ -92,3 +93,8 @@ coll = COLLECT(
     upx_exclude=[],
     name='Bloom Traveler',
 )
+
+# CLR reads this next to the EXE, not from PyInstaller's _internal directory.
+# The trust setting applies to this application, without removing download marks.
+copyfile(Path(SPECPATH) / 'packaging' / 'Bloom Traveler.exe.config',
+         Path(coll.name) / 'Bloom Traveler.exe.config')

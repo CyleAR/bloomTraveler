@@ -11,7 +11,7 @@ from controller import Controller, PreviewDevice
 from geocoder import Geocoder
 from library import Library
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 
 def data_directory():

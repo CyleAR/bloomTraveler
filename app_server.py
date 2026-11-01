@@ -165,9 +165,16 @@ class Handler(SimpleHTTPRequestHandler):
             path = urlsplit(self.path).path
             if path == "/api/action": self._json(controller.action(data))
             elif path == "/api/preferences": self._json(controller.library.save_map_style(data["map_style"]))
+            elif path == "/api/search-history": self._json(controller.library.remember_search(data["query"]))
+            elif path == "/api/search-history/delete":
+                if data["query"] is None: raise ValueError("삭제할 검색어가 필요합니다")
+                self._json(controller.library.delete_search(data["query"]))
+            elif path == "/api/search-history/clear": self._json(controller.library.delete_search())
             elif path == "/api/route": self._json(controller.set_route(Route.load(data["route"]), data.get("revision")))
             elif path == "/api/import": self._json(controller.set_route(import_gpx(data["gpx"]), data.get("revision")))
             elif path == "/api/library/save": self._json(controller.library.save(data["kind"], data["value"], data.get("id")))
+            elif path == "/api/library/move":
+                self._json(controller.library.move(data["kind"], data["id"], data["target_id"], data["position"]))
             elif path == "/api/library/delete":
                 controller.library.delete(data["kind"], data["id"])
                 self._json({"ok": True})

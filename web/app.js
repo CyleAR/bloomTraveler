@@ -14,7 +14,9 @@ let lastRealRevision = -1, lastPosition = "", lastLog = 0, toastTimer;
 let undoStack = [], redoStack = [], routeJobs = Promise.resolve(), currentDialog = null;
 let keys = new Set(), keyTimer, activeTab = "route", dragIndex = -1;
 let pointDrag = null, pointDragFrame = null, ignoreMapClickUntil = 0;
-const rowHeight = 74;
+let libraryDrag = null, libraryMovePending = false, ignoreLibraryClickUntil = 0;
+let searchView = "none", searchHistoryJobs = Promise.resolve();
+const rowHeight = 80;
 const emptyRoute = () => ({name:"새 경로",points:[],repeat:false,return_mode:"instant",return_speed:20,repeat_count:0,template:null});
 const mapStyles = new Set(["osm", "bloom"]);
 let activeMapStyle = "osm";
@@ -292,16 +294,61 @@ function renderRoute() {
   $("return-speed-field").hidden=route.return_mode==="instant";
 }
 async function refreshLibrary() {library=await api("library");renderLibrary();}
+function clearLibraryDrag() {
+  libraryDrag=null;
+  document.querySelectorAll('.library-row').forEach(row=>row.classList.remove('library-dragging','drop-before','drop-after'));
+}
+async function moveLibraryItem(kind, id, targetId, position) {
+  if(libraryMovePending || id===targetId)return;
+  libraryMovePending=true;
+  for(const host of [$("saved-routes"),$("saved-places")])host.setAttribute('aria-busy','true');
+  try {library=await api('library/move',{kind,id,target_id:targetId,position});}
+  finally {libraryMovePending=false;renderLibrary();}
+  const host=$(kind==='routes'?'saved-routes':'saved-places');
+  Array.from(host.querySelectorAll('.library-row')).find(row=>row.dataset.id===id)?.querySelector('.library-grip').focus({preventScroll:true});
+}
 function renderLibrary() {
+  clearLibraryDrag();
   $("saved-route-count").textContent=library.routes.length;
   $("saved-place-count").textContent=library.places.length;
   for(const kind of ["routes","places"]) {
     const filter=$(kind==="routes"?"route-filter":"place-filter").value.toLocaleLowerCase();
     const items=library[kind].filter(item=>item.name.toLocaleLowerCase().includes(filter));
     const host=$(kind==="routes"?"saved-routes":"saved-places");
-    host.innerHTML=items.length ? items.map(item=>`<div class="library-row" data-id="${esc(item.id)}"><button class="library-open" title="${kind==='routes'?'경로 불러오기':'지도에서 보기'}">${glyph(kind==='routes'?'route':'star')}<div><strong>${esc(item.name)}</strong><small>${kind==='routes'?`${item.points.length.toLocaleString()}개 지점` : coords(item)}</small></div></button><button class="icon-button rename-item" title="이름 변경" aria-label="${esc(item.name)} 이름 변경">${glyph('pencil')}</button><button class="icon-button danger delete-item" title="삭제" aria-label="${esc(item.name)} 삭제">${glyph('trash-2')}</button></div>`).join("") : `<div class="empty">${glyph(kind==='routes'?'folder-open':'star')}<span>${filter?'검색 결과가 없습니다':kind==='routes'?'저장한 경로가 없습니다':'즐겨찾는 장소가 없습니다'}</span></div>`;
+    host.setAttribute('aria-busy',String(libraryMovePending));
+    host.innerHTML=items.length ? items.map(item=>`<div class="library-row" data-id="${esc(item.id)}" draggable="true"><button class="icon-button library-grip" title="끌어서 순서 변경" aria-label="${esc(item.name)} 순서 변경">${glyph('grip-vertical')}</button><button class="library-open" title="${kind==='routes'?'경로 불러오기':'지도에서 보기'}">${glyph(kind==='routes'?'route':'star')}<div><strong>${esc(item.name)}</strong><small>${kind==='routes'?`${item.points.length.toLocaleString()}개 지점` : coords(item)}</small></div></button><button class="icon-button rename-item" title="이름 변경" aria-label="${esc(item.name)} 이름 변경">${glyph('pencil')}</button><button class="icon-button danger delete-item" title="삭제" aria-label="${esc(item.name)} 삭제">${glyph('trash-2')}</button></div>`).join("") : `<div class="empty">${glyph(kind==='routes'?'folder-open':'star')}<span>${filter?'검색 결과가 없습니다':kind==='routes'?'저장한 경로가 없습니다':'즐겨찾는 장소가 없습니다'}</span></div>`;
     host.querySelectorAll(".library-row").forEach(row=>{
       const item=items.find(x=>x.id===row.dataset.id);
+      row.addEventListener('click',event=>{if(performance.now()<ignoreLibraryClickUntil){event.preventDefault();event.stopImmediatePropagation();}},true);
+      row.ondragstart=event=>{
+        if(libraryMovePending || event.target.closest('.rename-item,.delete-item')){event.preventDefault();return;}
+        libraryDrag={kind,id:item.id};
+        event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',item.id);
+        row.classList.add('library-dragging');
+      };
+      row.ondragover=event=>{
+        if(libraryDrag?.kind!==kind || libraryDrag.id===item.id || libraryMovePending)return;
+        event.preventDefault();event.dataTransfer.dropEffect='move';
+        host.querySelectorAll('.drop-before,.drop-after').forEach(element=>element.classList.remove('drop-before','drop-after'));
+        const bounds=row.getBoundingClientRect();
+        row.classList.add(event.clientY<bounds.top+bounds.height/2?'drop-before':'drop-after');
+      };
+      row.ondragleave=event=>{if(!row.contains(event.relatedTarget))row.classList.remove('drop-before','drop-after');};
+      row.ondrop=event=>{
+        const source=libraryDrag;
+        if(source?.kind!==kind)return;
+        event.preventDefault();event.stopPropagation();
+        const bounds=row.getBoundingClientRect(),position=event.clientY<bounds.top+bounds.height/2?'before':'after';
+        clearLibraryDrag();ignoreLibraryClickUntil=performance.now()+250;
+        safely(()=>moveLibraryItem(kind,source.id,item.id,position))();
+      };
+      row.ondragend=()=>{clearLibraryDrag();ignoreLibraryClickUntil=performance.now()+250;};
+      row.querySelector('.library-grip').onkeydown=event=>{
+        if(!['ArrowUp','ArrowDown'].includes(event.key))return;
+        event.preventDefault();event.stopPropagation();
+        const index=items.findIndex(value=>value.id===item.id),up=event.key==='ArrowUp',target=items[index+(up?-1:1)];
+        if(target)safely(()=>moveLibraryItem(kind,item.id,target.id,up?'before':'after'))();
+      };
       row.querySelector(".library-open").onclick=safely(async()=>{
         if(kind==="places"){selectPlace(item,-1,true);return;}
         if(!await confirmReplace())return;
@@ -514,17 +561,50 @@ function renderState() {
   if(latest!==lastLog){lastLog=latest;$("device-logs").innerHTML=state.logs.length?state.logs.map(log=>`<div class="log-row"><time>${esc(log.time)}</time>${esc(log.message)}</div>`).join(''):'<div class="empty">연결 로그가 없습니다</div>';}
   renderPositions();icons();
 }
+function hideSearch() {
+  $("search-results").hidden=true;$("close-search").hidden=true;searchView='none';
+}
+function enqueueSearchHistory(job) {
+  const task=searchHistoryJobs.then(job);
+  searchHistoryJobs=task.catch(()=>{});
+  return task;
+}
+async function changeSearchHistory(path, data) {
+  return enqueueSearchHistory(async()=>{
+    library.recent_searches=await api(path,data);
+    if(searchView==='history')showRecentSearches();
+  });
+}
+function showRecentSearches() {
+  if($("search-submit").disabled)return;
+  const filter=$("place-search").value.trim().toLocaleLowerCase();
+  const queries=(library.recent_searches || []).filter(query=>query.toLocaleLowerCase().includes(filter));
+  if(!queries.length){hideSearch();return;}
+  searchView='history';$("search-results").hidden=false;$("close-search").hidden=false;
+  $("search-results").innerHTML=`<div class="recent-search-heading"><strong>최근 검색</strong><button id="clear-search-history" class="icon-button" title="최근 검색 전체 삭제" aria-label="최근 검색 전체 삭제">${glyph('trash-2')}</button></div>`+
+    queries.map((query,index)=>`<div class="recent-search-row"><button class="recent-search-open" data-history="${index}" title="${esc(query)} 다시 검색">${glyph('history')}<span>${esc(query)}</span></button><button class="icon-button recent-search-delete" data-history="${index}" title="검색 기록 삭제" aria-label="${esc(query)} 검색 기록 삭제">${glyph('x')}</button></div>`).join('');
+  $("search-results").querySelectorAll('.recent-search-open').forEach(button=>button.onclick=safely(()=>{
+    $("place-search").value=queries[Number(button.dataset.history)];return searchPlaces();
+  }));
+  $("search-results").querySelectorAll('.recent-search-delete').forEach(button=>button.onclick=safely(()=>
+    changeSearchHistory('search-history/delete',{query:queries[Number(button.dataset.history)]})));
+  $("clear-search-history").onclick=safely(()=>changeSearchHistory('search-history/clear',{}));
+  icons();
+}
 async function searchPlaces() {
   if($("search-submit").disabled)return;
   const query=$("place-search").value.trim();if(!query)return;
-  $("search-submit").disabled=true;$("search-results").hidden=false;$("close-search").hidden=false;
+  searchView='loading';$("search-submit").disabled=true;$("search-results").hidden=false;$("close-search").hidden=false;
   $("search-results").innerHTML='<div class="search-note">검색 중...</div>';
   try {
     const result=await api(`search?q=${encodeURIComponent(query)}`);
+    try {await changeSearchHistory('search-history',{query});}
+    catch(error){toast('검색 기록을 저장하지 못했습니다: '+error.message,true);}
+    searchView='results';
     $("search-results").innerHTML=result.places.length?result.places.map((place,index)=>`<button class="search-result" data-place="${index}">${glyph('map-pin')}<div><strong>${esc(place.name)}</strong><small>${esc(place.address)}</small></div></button>`).join(''):'<div class="search-note">검색 결과가 없습니다</div>';
-    $("search-results").querySelectorAll("button").forEach(button=>button.onclick=()=>{selectPlace(result.places[Number(button.dataset.place)],-1,true);$("search-results").hidden=true;});
+    $("search-results").querySelectorAll("button").forEach(button=>button.onclick=()=>{selectPlace(result.places[Number(button.dataset.place)],-1,true);hideSearch();});
     icons();
-  } catch(error){$("search-results").innerHTML=`<div class="search-note">${esc(error.message)}</div>`;throw error;}
+  } catch(error){searchView='error';$("search-results").innerHTML=`<div class="search-note">${esc(error.message)}</div>`;throw error;}
   finally{$("search-submit").disabled=false;}
 }
 async function sendKeys() {try{await action("keys",{keys:[...keys]});}catch(error){keys.clear();toast(error.message,true);}}
@@ -555,8 +635,26 @@ function wireUI() {
   $("editor-form").onsubmit=(event)=>{event.preventDefault();const fields=Object.fromEntries(new FormData(event.target));if(event.target.querySelector('input[name=name][required]') && !fields.name.trim()){$("dialog-error").textContent="이름을 입력하세요";$("dialog-error").hidden=false;return;}closeDialog(fields);};
   $("cancel-dialog").onclick=$("close-dialog").onclick=()=>closeDialog();
   $("editor-dialog").oncancel=(event)=>{event.preventDefault();closeDialog();};
-  $("search-form").onsubmit=safely(event=>{event.preventDefault();return searchPlaces();});
-  $("close-search").onclick=()=>{$("search-results").hidden=true;$("close-search").hidden=true;};
+  $("search-form").onsubmit=event=>{event.preventDefault();safely(searchPlaces)();};
+  $("close-search").onclick=hideSearch;
+  $("place-search").onfocus=$("place-search").onclick=$("place-search").oninput=showRecentSearches;
+  $("place-search").onkeydown=event=>{
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();hideSearch();}
+    if(event.key==='ArrowDown' && !$("search-results").hidden){
+      const first=$("search-results").querySelector('.recent-search-open,.search-result');
+      if(first){event.preventDefault();event.stopPropagation();first.focus();}
+    }
+  };
+  $("search-results").onkeydown=event=>{
+    if(!['ArrowDown','ArrowUp','Escape'].includes(event.key))return;
+    event.preventDefault();event.stopPropagation();
+    if(event.key==='Escape'){$("place-search").focus();hideSearch();return;}
+    const buttons=Array.from($("search-results").querySelectorAll('.recent-search-open,.search-result'));
+    if(!buttons.length)return;
+    const index=buttons.indexOf(document.activeElement),next=index+(event.key==='ArrowDown'?1:-1);
+    if(next<0)$("place-search").focus();else buttons[next%buttons.length].focus();
+  };
+  document.addEventListener('pointerdown',event=>{if(!event.target.closest('.search-area'))hideSearch();});
   $("close-place").onclick=clearSelection;
   $("add-place").onclick=safely(()=>selected && addPoint(selected));
   $("teleport-place").onclick=safely(async()=>{if(selected){setFollow(true);await action("teleport",{point:selected});}});
